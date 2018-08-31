@@ -1,0 +1,121 @@
+---
+title: "Analysis and Prediction of Exercise"
+author: "Zhengmao Zhu"
+date: "August 30, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+#### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+#### Data Source
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+#### Objects of the Project
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Load the Data
+```{r Load the Data, comment=""}
+library(caret)
+library(rpart)
+library(randomForest)
+library(kernlab)
+library(caTools)
+set.seed(777)
+train=read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"),
+               na.strings=c("NA","#DIV/0!",""))
+test=read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"),
+              na.strings=c("NA","#DIV/0!",""))
+dim(train)
+dim(test)
+```
+
+## Clean the Data
+We should delete the columns which having low variance and the columns which have the NA more than 50%.
+```{r Clean the Data, comment=""}
+delete_var=nearZeroVar(train,saveMetrics=TRUE)
+train=train[,!delete_var$nzv]
+train=train[,-(1:6)]
+na_var=sapply(colnames(train), function(x)
+              if(sum(is.na(train[,x]))>0.5*nrow(train))
+                {return(TRUE)
+                }else{
+                return(FALSE)
+                }
+              )
+train=train[,!na_var]
+```
+
+## Cross validation & Fitted Model
+We should split the training dataset into two parts for our training and validation.Then we fit the data into different models to get the results. 
+```{r Cross validation & Fitted Model, comment=""}
+split=createDataPartition(y=train$classe, p=0.7, list=FALSE)
+train_train=train[split,]
+train_test=train[-split,]
+
+trControl=trainControl(method = "none", verboseIter=FALSE, allowParallel=TRUE)
+SVMRadial=train(classe ~ ., data = train_train, method = "svmRadial", trControl= trControl)
+RandomForest=train(classe ~ ., data = train_train, method = "rf", trControl= trControl)
+LogitBoost=train(classe ~ ., data = train_train, method = "LogitBoost", trControl= trControl)
+DecisionTree=rpart(classe ~ ., data=train_train, method="class")
+```
+
+## Results and Test
+From the results above, we use the validation parts to predict and compare the accuracy of all models and show the results in the table.
+```{r Results and Test, comment=""}
+predSVM=predict(SVMRadial,train_test)
+confusionMatrix(predSVM, train_test$classe)
+
+predRF=predict(RandomForest,train_test)
+confusionMatrix(predRF, train_test$classe)
+
+predLB=predict(LogitBoost,train_test)
+confusionMatrix(predLB, train_test$classe)
+
+predDT=predict(DecisionTree, train_test, type = "class")
+confusionMatrix(predDT, train_test$classe)
+
+modelname=c("Random Forest", "SVM (radial)","LogitBoost","Decision Tree")
+accuracy=c(confusionMatrix(predSVM, train_test$classe)$overall["Accuracy"],
+           confusionMatrix(predRF, train_test$classe)$overall["Accuracy"],
+           confusionMatrix(predLB, train_test$classe)$overall["Accuracy"],
+           confusionMatrix(predDT, train_test$classe)$overall["Accuracy"])
+Result=cbind(modelname, accuracy)
+
+knitr::kable(Result)
+```
+
+## Prediction
+From the results above, we know that the Random Forest model fit the data best, so we decide to use that model to predict the test dataset.
+```{r Prediction, comment=""}
+final_var=colnames(train_train[,-length(train_train)])
+test_test=test[final_var]
+
+predTest=predict(RandomForest,test_test)
+predTest
+```
+
+## Submit the File
+```{r Submit the File, comment=""}
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+pml_write_files(predTest)
+```
+
